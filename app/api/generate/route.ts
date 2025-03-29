@@ -1,81 +1,133 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export const runtime = 'edge';
+
+// CORS headers configuration
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export async function OPTIONS() {
+  return new Response(null, {
+    headers: CORS_HEADERS,
+  });
+}
+
+export async function POST(req: Request) {
+  // Validate environment configuration first
+  if (!process.env.CLOUDFLARE_WORKER_URL) {
+    console.error('CLOUDFLARE_WORKER_URL is not configured');
+    return NextResponse.json(
+      { 
+        error: "Server configuration error",
+        details: "Cloudflare Worker URL is not configured" 
+      },
+      { 
+        status: 500,
+        headers: CORS_HEADERS 
+      }
+    );
+  }
+
+  // Validate request method
+  if (req.method !== 'POST') {
+    return NextResponse.json(
+      { error: "Method not allowed" },
+      { 
+        status: 405,
+        headers: CORS_HEADERS 
+      }
+    );
+  }
+
+  // Parse and validate request body
+  let requestBody;
   try {
-    const { topic, difficulty } = await req.json();
+    requestBody = await req.json();
+  } catch (error) {
+    return NextResponse.json(
+      { 
+        error: "Invalid request body",
+        details: "Expected JSON payload" 
+      },
+      { 
+        status: 400,
+        headers: CORS_HEADERS 
+      }
+    );
+  }
 
-    if (!topic || !difficulty) {
-      return NextResponse.json(
-        { error: "Missing topic or difficulty parameter" },
-        { status: 400 }
-      );
-    }
+  const { topic, difficulty } = requestBody;
 
-    const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11436";
-    const questionCount = 5;
+  // Validate required fields
+  if (!topic || typeof topic !== 'string') {
+    return NextResponse.json(
+      { 
+        error: "Invalid request",
+        details: "Topic is required and must be a string" 
+      },
+      { 
+        status: 400,
+        headers: CORS_HEADERS 
+      }
+    );
+  }
 
-    const prompt = `<s>[INST] <<SYS>>
-    Generate a ${questionCount}-question multiple-choice quiz on "${topic}". Use this strict JSON format:
-    {
-      "quiz": [
-        {
-          "question": "MCQ question?",
-          "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-          "answer": "Correct option"
-        }
-      ]
-    }
-    Rules:
-    1. Only MCQs (no coding questions)
-    2. Strict JSON format only (no markdown, explanations, or extra text)
-    <</SYS>>[/INST]`;
+  // Validate difficulty level
+  const validDifficulties = ['easy', 'medium', 'hard'];
+  if (!validDifficulties.includes(difficulty)) {
+    return NextResponse.json(
+      { 
+        error: "Invalid difficulty level",
+        details: `Difficulty must be one of: ${validDifficulties.join(', ')}` 
+      },
+      { 
+        status: 400,
+        headers: CORS_HEADERS 
+      }
+    );
+  }
 
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "mistral:7b-instruct-q4_K_M",
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.3,
-          num_predict: 500,
-          num_ctx: 2048,
-          stop: ["</s>"],
-          repeat_penalty: 1.1,
-        },
-      }),
+  try {
+    const response = await fetch(process.env.CLOUDFLARE_WORKER_URL, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ topic, difficulty }),
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama API error: ${await response.text()}`);
+      const errorText = await response.text();
+      throw new Error(`Worker responded with status ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
-    const rawResponse = data.response.trim();
 
-    // Extract only valid JSON part
-    const jsonStart = rawResponse.indexOf("{");
-    const jsonEnd = rawResponse.lastIndexOf("}") + 1;
-    const jsonStr = rawResponse.slice(jsonStart, jsonEnd);
-
-    const quiz = JSON.parse(jsonStr);
-
-    if (!quiz?.quiz || !Array.isArray(quiz.quiz)) {
-      throw new Error("Invalid quiz format received from AI response");
+    // Validate response structure
+    if (!data.quiz || !Array.isArray(data.quiz)) {
+      throw new Error("Invalid response format from worker");
     }
 
-    return NextResponse.json(quiz);
-  } catch (error) {
-    console.error("Quiz generation failed:", error);
+    return NextResponse.json(data, {
+      headers: CORS_HEADERS,
+    });
 
+  } catch (error) {
+    console.error('Quiz generation error:', error);
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     return NextResponse.json(
-      {
-        quiz: [],
+      { 
         error: "Failed to generate quiz",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: errorMessage 
       },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: CORS_HEADERS 
+      }
     );
   }
 }

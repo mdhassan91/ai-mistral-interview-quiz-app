@@ -11,6 +11,7 @@ interface QuizQuestion {
   question: string;
   options: string[];
   answer: string;
+  explanation?: string; // Added explanation field
 }
 
 // Ensure userAnswers is indexed correctly
@@ -75,7 +76,7 @@ export default function QuizApp() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className="text-xl font-bold mb-4">AI Quiz Generator</h1>
+        <h1 className="text-xl font-bold mb-4">Prepare for Interview With Help of AI</h1>
         <Input
           placeholder="Enter quiz topic..."
           value={topic}
@@ -130,17 +131,26 @@ export default function QuizApp() {
                   </label>
                 ))}
                 {showResults && (
-                  <p
-                    className={`mt-2 font-bold ${
-                      userAnswers[index]?.trim().toLowerCase() === q.answer.trim().toLowerCase()
-                        ? "text-green-600"
-                        : "text-red-600"
-                    }`}
-                  >
-                    {userAnswers[index]?.trim().toLowerCase() === q.answer.trim().toLowerCase()
-                      ? "✅ Correct"
-                      : `❌ Correct Answer: ${q.answer}`}
-                  </p>
+                  <div className="mt-3 space-y-2">
+                    <p
+                      className={`font-bold ${
+                        userAnswers[index]?.trim().toLowerCase() === q.answer.trim().toLowerCase()
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {userAnswers[index]?.trim().toLowerCase() === q.answer.trim().toLowerCase()
+                        ? "✅ Correct"
+                        : `❌ Correct Answer: ${q.answer}`}
+                    </p>
+                    {q.explanation && (
+                      <div className="bg-blue-50 p-3 rounded-md">
+                        <p className="text-sm text-blue-800">
+                          <span className="font-semibold">Explanation:</span> {q.explanation}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>
